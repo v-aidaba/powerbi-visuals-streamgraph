@@ -58,7 +58,7 @@
     "@typescript-eslint/parser": "^8.56.0",
     "coverage-istanbul-loader": "3.0.5",
     "css-loader": "7.1.4",
-    "eslint": "^10.0.0",
+    "eslint": "^9.15.0",
     "eslint-plugin-powerbi-visuals": "^1.1.0",
     "jasmine": "6.0.0",
     "karma": "^6.4.4",
