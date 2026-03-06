@@ -1135,7 +1135,6 @@ describe("StreamGraph", () => {
             });
 
             const tooltipItems = createTooltipInfo(
-                dataViewForTooltip,
                 categorical,
                 localizationManager,
                 0,
@@ -1158,7 +1157,6 @@ describe("StreamGraph", () => {
             });
 
             const tooltipItems = createTooltipInfo(
-                dataViewForTooltip,
                 categorical,
                 localizationManager,
                 0,
@@ -1183,7 +1181,6 @@ describe("StreamGraph", () => {
             (categoryColumn.source as any).roles = { Tooltips: true };
 
             const tooltipItems = createTooltipInfo(
-                dataViewForTooltip,
                 categorical,
                 localizationManager,
                 0,

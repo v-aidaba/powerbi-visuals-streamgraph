@@ -24,7 +24,6 @@
  *  THE SOFTWARE.
  */
 import powerbi from "powerbi-visuals-api";
-import DataView = powerbi.DataView;
 
 // powerbi.extensibility.utils.formatting
 import {valueFormatter} from "powerbi-visuals-utils-formattingutils";
@@ -56,7 +55,6 @@ export interface TooltipSeriesDataItem {
  * - Else falls back to the default series tooltips created via createTooltipData.
  */
 export function createTooltipInfo(
-    dataView: DataView,
     dataViewCat: DataViewCategorical,
     localizationManager: ILocalizationManager,
     seriesIndex?: number,
@@ -97,11 +95,10 @@ export function createTooltipInfo(
         }
     }
 
-    return createTooltipData(dataView, valuesSource, seriesSource, localizationManager);
+    return createTooltipData(valuesSource, seriesSource, localizationManager);
 }
 
 export function createTooltipData(
-    dataView: DataView,
     valuesSource: DataViewMetadataColumn | undefined,
     seriesValues: TooltipSeriesDataItem[],
     localizationManager: ILocalizationManager
@@ -188,7 +185,7 @@ export function getFormatStringFromColumn(column: DataViewMetadataColumn): strin
 function resolveSeriesIndex(seriesIndex?: number): number {
     // Keep original behavior: bitwise OR with DefaultSeriesIndex.
     // (If seriesIndex is undefined, result is 0)
-    return (seriesIndex as any) | DefaultSeriesIndex;
+    return seriesIndex ?? DefaultSeriesIndex;
 }
 
 function isValidCategoryIndex(categoryIndex?: number): categoryIndex is number {

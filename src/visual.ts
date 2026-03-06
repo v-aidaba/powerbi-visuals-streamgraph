@@ -103,9 +103,6 @@ import { ValueType } from "powerbi-visuals-utils-typeutils/lib/valueType";
 // powerbi.extensibility.utils.dataview
 import { dataViewObjects } from "powerbi-visuals-utils-dataviewutils";
 
-// powerbi.extensibility.utils.tooltip
-import { ITooltipServiceWrapper, createTooltipServiceWrapper } from "powerbi-visuals-utils-tooltiputils";
-
 // powerbi.extensibility.utils.formattingModel
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import ISelectionManager = powerbi.extensibility.ISelectionManager;
@@ -221,7 +218,12 @@ export class StreamGraph implements IVisual {
     private behavior: IInteractiveBehavior;
     private interactivityService: IInteractivityService<StreamGraphSeries>;
 
-    private tooltipServiceWrapper: ITooltipServiceWrapper;
+    // Track last tooltip interaction type for proper touch dismissal
+    private lastTooltipWasTouch: boolean = false;
+
+    // Cache for lazy tooltip computation to avoid redundant calculations
+    private tooltipCache: Map<string, VisualTooltipDataItem[]> = new Map();
+
     private element: Selection<BaseType, any, any, any>;
     private svg: Selection<BaseType, any, any, any>;
     private clearCatcher: Selection<BaseType, StreamGraphSeries, any, any>;
@@ -328,7 +330,6 @@ export class StreamGraph implements IVisual {
             }
 
             const tooltipInfo: VisualTooltipDataItem[] = createTooltipInfo(
-                dataView,
                 { categories, values },
                 localizationManager,
                 valueIndex
@@ -387,15 +388,7 @@ export class StreamGraph implements IVisual {
                     value = y;
                 }
 
-                // Create tooltip info for this specific data point
-                const dataPointTooltipInfo: VisualTooltipDataItem[] = createTooltipInfo(
-                    dataView,
-                    { categories, values },
-                    localizationManager,
-                    valueIndex,
-                    dataPointValueIndex
-                );
-
+                // Store raw data for lazy tooltip computation instead of pre-computing
                 const streamDataPoint: StreamDataPoint = {
                     x: dataPointValueIndex,
                     y: StreamGraph.isNumber(y)
@@ -407,7 +400,7 @@ export class StreamGraph implements IVisual {
                         hasHighlights &&
                         values[valueIndex].highlights &&
                         values[valueIndex].highlights[dataPointValueIndex] !== null,
-                    tooltipInfo: dataPointTooltipInfo,
+                    tooltipInfo: undefined,
                 };
 
                 series[valueIndex].dataPoints.push(streamDataPoint);
@@ -631,10 +624,6 @@ export class StreamGraph implements IVisual {
         const element: HTMLElement = options.element;
         this.element = select(element);
 
-        this.tooltipServiceWrapper = createTooltipServiceWrapper(
-            this.visualHost.tooltipService,
-            element);
-
         this.svg = select(element)
             .append("svg")
             .classed(StreamGraph.VisualClassName, true);
@@ -674,6 +663,9 @@ export class StreamGraph implements IVisual {
 
     public update(options: VisualUpdateOptions): void {
         this.events.renderingStarted(options);
+
+        // Clear tooltip cache on data updates
+        this.tooltipCache.clear();
 
         if (!options
             || !options.dataViews
@@ -794,16 +786,22 @@ export class StreamGraph implements IVisual {
             return;
         }
 
+        const isTouchEvent = event.pointerType === "touch";
+        this.lastTooltipWasTouch = isTouchEvent;
+
         this.visualHost.tooltipService[action]({
             coordinates: [event.clientX, event.clientY],
-            isTouchEvent: event.pointerType === "touch",
+            isTouchEvent,
             dataItems,
             identities: [seriesData.identity],
         });
     }
 
     private hideTooltip(): void {
-        this.visualHost.tooltipService.hide({ isTouchEvent: false, immediately: false });
+        this.visualHost.tooltipService.hide({ 
+            isTouchEvent: this.lastTooltipWasTouch, 
+            immediately: false 
+        });
     }
 
     private getStackedDatumIndex(stackedDatum: any): number {
@@ -841,7 +839,33 @@ export class StreamGraph implements IVisual {
     ): VisualTooltipDataItem[] {
         const point = seriesData.dataPoints?.[pointIndex];
 
-        if (point?.tooltipInfo?.length) {
+        if (!point) {
+            return hasExplicitTooltipFields ? [] : seriesData.tooltipInfo || [];
+        }
+
+        // Compute tooltip info lazily on first access
+        if (point.tooltipInfo === undefined) {
+            const cacheKey = `${seriesIndex}-${pointIndex}`;
+            
+            let tooltipInfo = this.tooltipCache.get(cacheKey);
+            if (!tooltipInfo) {
+                // Lazy computation - only when actually needed
+                tooltipInfo = createTooltipInfo(
+                    { categories: this.dataView.categorical.categories, values: this.dataView.categorical.values },
+                    this.localizationManager,
+                    seriesIndex,
+                    pointIndex
+                );
+                
+                // Cache the result to avoid recomputing
+                this.tooltipCache.set(cacheKey, tooltipInfo);
+            }
+            
+            // Store in the data point for subsequent accesses
+            point.tooltipInfo = tooltipInfo;
+        }
+
+        if (point.tooltipInfo?.length) {
             return point.tooltipInfo;
         }
 
@@ -1072,42 +1096,6 @@ export class StreamGraph implements IVisual {
         const matrix = g.transform.baseVal.consolidate().matrix;
         return [matrix.e, matrix.f, -Math.asin(matrix.a) * 180 / Math.PI];
     }
-
-    private calculateXAxisAdditionalHeight(categories: PrimitiveValue[]): number {
-        if (!categories || categories.length === 0) {
-            return 0;
-        }
-
-        const sortedByLength: PrimitiveValue[] = [...categories].sort((a: string, b: string) => 
-            (a ? a.toString().length : 0) > (b ? b.toString().length : 0) ? 1 : -1);
-        let longestCategory: PrimitiveValue = sortedByLength[categories.length - 1] || "";
-
-        if (longestCategory instanceof Date) {
-            const metadataColumn: DataViewMetadataColumn = this.dataView.categorical.categories[0].source;
-            const formatString: string = valueFormatter.getFormatStringByColumn(metadataColumn);
-
-            const formatter = valueFormatter.create({
-                format: formatString,
-                value: longestCategory,
-                columnType: {
-                    dateTime: true
-                }
-            });
-
-            longestCategory = formatter.format(longestCategory);
-        }
-
-        const textProperties: TextProperties = {
-            text: longestCategory.toString(),
-            fontFamily: "sans-serif",
-            fontSize: PixelConverter.toString(this.data.formattingSettings.categoryAxis.options.fontSize.value)
-        };
-
-        const longestCategoryWidth = textMeasurementService.measureSvgTextWidth(textProperties);
-        const requiredHeight = longestCategoryWidth * Math.tan(StreamGraph.CategoryTextRotationDegree * Math.PI / 180);
-        return requiredHeight;
-    }
-
     
     private renderYAxis(effectiveHeight: number, metaDataColumnPercent: powerbi.DataViewMetadataColumn): void {
         this.yAxisProperties = AxisHelper.createAxis({
