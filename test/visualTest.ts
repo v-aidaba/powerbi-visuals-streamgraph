@@ -720,7 +720,8 @@ describe("StreamGraph", () => {
                 dataView,
                 colorPalette,
                 interactivityService,
-                visualBuilder.visualHost);
+                visualBuilder.visualHost,
+                visualBuilder.visualHost.createLocalizationManager());
 
             series = data.series;
 
@@ -736,7 +737,8 @@ describe("StreamGraph", () => {
                 dataView,
                 colorPalette,
                 interactivityService,
-                visualBuilder.visualHost).series;
+                visualBuilder.visualHost,
+                visualBuilder.visualHost.createLocalizationManager()).series;
 
             // Verify the selection has been cleared
             expect(series[0].selected).toBe(false);
@@ -868,20 +870,23 @@ describe("StreamGraph", () => {
             interactivityService?: IInteractivityService<any>): StreamData {
 
             let streamData: StreamData;
+            const localizationManager = visualHost?.createLocalizationManager();
 
             expect(() => {
                 streamData = StreamGraph.converter(
                     dataView,
                     colorPalette,
                     interactivityService!,
-                    visualHost);
+                    visualHost,
+                    localizationManager);
             }).not.toThrow();
 
             streamData = StreamGraph.converter(
                 dataView,
                 colorPalette,
                 interactivityService!,
-                visualHost);
+                visualHost,
+                localizationManager);
 
             return streamData;
         }

@@ -261,6 +261,7 @@ export class StreamGraph implements IVisual {
         colorPalette: IColorPalette,
         interactivityService: IInteractivityService<StreamGraphSeries>,
         visualHost: IVisualHost,
+        localizationManager: ILocalizationManager,
     ): StreamData {
 
         if (!dataView
@@ -300,8 +301,6 @@ export class StreamGraph implements IVisual {
         const fontSizeInPx: string = PixelConverter.fromPoint(formattingSettings.dataLabels.fontSize.value);
 
         const stackValues: StackValue[] = [];
-        //create localization manager once
-        const localizationManager = visualHost?.createLocalizationManager();
 
         for (let valueIndex: number = 0; valueIndex < values.length; valueIndex++) {
             let label: string = values[valueIndex].source.groupName as string,
@@ -686,6 +685,7 @@ export class StreamGraph implements IVisual {
             this.colorPalette,
             this.interactivityService,
             this.visualHost,
+            this.localizationManager,
         );
 
         this.data.formattingSettings.populateStreams(this.data.series);
