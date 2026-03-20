@@ -9,6 +9,10 @@
     "supportUrl": "https://aka.ms/customvisualscommunity",
     "gitHubUrl": "https://github.com/Microsoft/powerbi-visuals-streamgraph"
   },
+  "dialogVisual": {
+    "displayName": "DialogVisual",
+    "visualClassName": "DialogVisual"
+  },
   "apiVersion": "5.7.0",
   "author": {
     "name": "Microsoft",

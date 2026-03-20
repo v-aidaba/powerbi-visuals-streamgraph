@@ -55,6 +55,7 @@ import IColorPalette = powerbi.extensibility.IColorPalette;
 import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
 import IVisualEventService = powerbi.extensibility.IVisualEventService;
+import DialogOpenOptions = powerbi.extensibility.visual.DialogOpenOptions;
 
 import { DefaultOpacity, DataOrder, DataOffset, LabelOrientationMode } from "./utils";
 import { StreamGraphSettingsModel, BaseAxisCardSettings, LegendTitleGroup, LegendCardSettings, BaseFontCardSettings } from "./streamGraphSettingsModel";
@@ -239,6 +240,24 @@ export class StreamGraph implements IVisual {
     constructor(options: VisualConstructorOptions) {
         this.events = options.host.eventService;
         this.init(options);
+    }
+
+    private showDialog(): void {
+        const dialogOptions: DialogOpenOptions = {
+            title: "Stream Graph Dialog",
+            size: { width: 600, height: 400 },
+            position: { type: powerbi.VisualDialogPositionType.Center },
+            actionButtons: [powerbi.DialogAction.OK, powerbi.DialogAction.Close]
+        };
+
+        this.visualHost.openModalDialog(
+            "DialogVisual",
+            dialogOptions
+        ).then((result) => {
+            console.log("Dialog closed with result:", result);
+        }).catch((error) => {
+            console.error("Dialog error:", error);
+        });
     }
 
     private static getViewport(viewport: IViewport): IViewport {
@@ -659,6 +678,22 @@ export class StreamGraph implements IVisual {
             false,
             null
         );
+
+        const openDialogBtn = document.createElement("button");
+        openDialogBtn.textContent = "Open Dialog";
+        openDialogBtn.style.position = "absolute";
+        openDialogBtn.style.top = "5px";
+        openDialogBtn.style.right = "5px";
+        openDialogBtn.style.zIndex = "1000";
+        openDialogBtn.style.padding = "4px 12px";
+        openDialogBtn.style.fontSize = "12px";
+        openDialogBtn.style.cursor = "pointer";
+        openDialogBtn.style.border = "1px solid #8a8886";
+        openDialogBtn.style.borderRadius = "4px";
+        openDialogBtn.style.backgroundColor = "#0078d4";
+        openDialogBtn.style.color = "#ffffff";
+        openDialogBtn.addEventListener("click", () => this.showDialog());
+        element.appendChild(openDialogBtn);
     }
 
     public update(options: VisualUpdateOptions): void {
@@ -672,6 +707,10 @@ export class StreamGraph implements IVisual {
             || !options.dataViews[0]
             || !options.dataViews[0].categorical
         ) {
+            this.visualHost.displayWarningIcon(
+                "No data available",
+                "Add fields to the Category and Values data roles to display this visual."
+            );
             this.clearData();
             this.events.renderingFinished(options);
             return;
@@ -694,6 +733,10 @@ export class StreamGraph implements IVisual {
             || !this.data.series
             || !this.data.series.length
         ) {
+            this.visualHost.displayWarningIcon(
+                "No series data",
+                "The current data does not produce any series. Please check your data fields."
+            );
             this.clearData();
             this.events.renderingFinished(options);
             return;

@@ -1,7 +1,15 @@
 {
     "supportsKeyboardFocus": true,
     "supportsMultiVisualSelection": true,
-    "privileges": [],
+    "privileges": [
+        {
+            "name": "WebAccess",
+            "essential": true,
+            "parameters": [
+                "openModalDialog"
+            ]
+        }
+    ],
     "dataRoles": [
         {
             "name": "Category",
