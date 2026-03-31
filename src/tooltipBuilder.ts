@@ -38,7 +38,7 @@ import ILocalizationManager = powerbi.extensibility.ILocalizationManager;
 const HighlightedValueDisplayName: string = "Visual_Tooltips_Highlighted";
 const VisualTooltipsValues: string = "Visual_Values";
 const DefaultSeriesIndex: number = 0;
-const TooltipsRoleName = "Tooltips";
+export const TooltipsRoleName = "Tooltips";
 
 type RolesMap = { [key: string]: boolean } | undefined;
 

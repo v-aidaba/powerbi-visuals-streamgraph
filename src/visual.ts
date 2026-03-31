@@ -59,7 +59,7 @@ import IVisualEventService = powerbi.extensibility.IVisualEventService;
 import { DefaultOpacity, DataOrder, DataOffset, LabelOrientationMode } from "./utils";
 import { StreamGraphSettingsModel, BaseAxisCardSettings, LegendTitleGroup, LegendCardSettings, BaseFontCardSettings } from "./streamGraphSettingsModel";
 import { BehaviorOptions, StreamGraphBehavior } from "./behavior";
-import { createTooltipInfo } from "./tooltipBuilder";
+import { createTooltipInfo, TooltipsRoleName } from "./tooltipBuilder";
 import { StreamData, StreamGraphSeries, StreamDataPoint, StackValue, StackedStackValue, LabelStyleProperties, LabelDataItem } from "./dataInterfaces";
 
 
@@ -845,7 +845,11 @@ export class StreamGraph implements IVisual {
 
         // Compute tooltip info lazily on first access
         if (point.tooltipInfo === undefined) {
-            const cacheKey = `${seriesIndex}-${pointIndex}`;
+            // In default mode all points of the same series produce identical items,
+            // so key by series only. In explicit mode each point can differ.
+            const cacheKey = hasExplicitTooltipFields
+                ? `${seriesIndex}-${pointIndex}`
+                : `${seriesIndex}`;
             
             let tooltipInfo = this.tooltipCache.get(cacheKey);
             if (!tooltipInfo) {
@@ -874,7 +878,7 @@ export class StreamGraph implements IVisual {
 
     private hasExplicitTooltipFields(dataView: DataView): boolean {
         const categoricalData: DataViewCategorical | undefined = dataView?.categorical;
-        const hasTooltipsRole = (roles?: { [key: string]: boolean }): boolean => !!(roles && roles["Tooltips"]);
+        const hasTooltipsRole = (roles?: { [key: string]: boolean }): boolean => !!(roles && roles[TooltipsRoleName]);
 
         return !!(
             categoricalData &&
