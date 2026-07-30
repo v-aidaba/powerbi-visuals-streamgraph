@@ -224,6 +224,9 @@ export class StreamGraph implements IVisual {
     // Cache for lazy tooltip computation to avoid redundant calculations
     private tooltipCache: Map<string, VisualTooltipDataItem[]> = new Map();
 
+    // Cached per-update value for rotated label margin
+    private cachedRotatedLabelMargin: number = 0;
+
     private element: Selection<BaseType, any, any, any>;
     private svg: Selection<BaseType, any, any, any>;
     private clearCatcher: Selection<BaseType, StreamGraphSeries, any, any>;
@@ -301,17 +304,19 @@ export class StreamGraph implements IVisual {
         const fontSizeInPx: string = PixelConverter.fromPoint(formattingSettings.dataLabels.fontSize.value);
 
         const stackValues: StackValue[] = [];
+        const arrayOfYs: number[] = [];
 
         for (let valueIndex: number = 0; valueIndex < values.length; valueIndex++) {
             let label: string = values[valueIndex].source.groupName as string,
                 identity: ISelectionId = null,
-                hasHighlights: boolean = !!(values.length > 0 && values[valueIndex].highlights);
-            
-            if(hasHighlights)
-            {
-                for(let idx = 0; idx < values[valueIndex].highlights.length; idx++)
-                {
-                    hasHighlights ||= !!(values[valueIndex].highlights[idx]);
+                hasHighlights: boolean = false;
+
+            if (values[valueIndex].highlights) {
+                for (let idx = 0; idx < values[valueIndex].highlights.length; idx++) {
+                    if (values[valueIndex].highlights[idx] !== null) {
+                        hasHighlights = true;
+                        break;
+                    }
                 }
             }
 
@@ -434,31 +439,18 @@ export class StreamGraph implements IVisual {
                 if (streamDataPoint.y < yMinValue) {
                     yMinValue = streamDataPoint.y;
                 }
-            }
-        }
 
-        const arrayOfYs = [];
-        for (let valueIndex: number = 0; valueIndex < values.length; valueIndex++) {
-            const dataPointsValues: PrimitiveValue[] = values[valueIndex].values;
-
-            for (let dataPointValueIndex: number = 0; dataPointValueIndex < dataPointsValues.length; dataPointValueIndex++) {
-                let y: number = dataPointsValues[dataPointValueIndex] as number;
-
-                if (y > value) {
-                    value = y;
+                // Accumulate per-column Y totals for stacked yMax calculation
+                if (arrayOfYs.length <= dataPointValueIndex) {
+                    arrayOfYs.push(streamDataPoint.y);
+                } else {
+                    arrayOfYs[dataPointValueIndex] += streamDataPoint.y;
                 }
-                y = StreamGraph.isNumber(y)
-                        ? y
-                        : StreamGraph.DefaultValue;
-
-                if(arrayOfYs.length <= dataPointValueIndex)
-                    arrayOfYs.push(y)
-                else
-                    arrayOfYs[dataPointValueIndex] += y;
             }
         }
-        for(let idx = 0; idx < arrayOfYs.length; idx++)
-        {
+
+        // Update yMaxValue with stacked totals
+        for (let idx = 0; idx < arrayOfYs.length; idx++) {
             if (arrayOfYs[idx] > yMaxValue) {
                 yMaxValue = arrayOfYs[idx];
             }
@@ -919,23 +911,6 @@ export class StreamGraph implements IVisual {
         });
     }
 
-    private hideFirstAndLastTickXAxis()
-    {
-        const xAxisLineNodes: Selection<BaseType, any, any, any> = this.axisX.selectAll("line");
-        const xAxisLineNodesArray: BaseType[] = xAxisLineNodes.nodes();
-
-        // This is done to make sure first and last tick always transparent (there are cases when they are not alligned with start and end of axis)
-        if(xAxisLineNodesArray.length > 2)
-        {
-            for(let idx = 0; idx < xAxisLineNodesArray.length; idx++ )
-            {
-                (xAxisLineNodesArray[idx] as Element).setAttribute("opacity", "100");
-            }
-            (xAxisLineNodesArray[0] as Element).setAttribute("opacity", "0");
-            (xAxisLineNodesArray[xAxisLineNodesArray.length - 1] as Element).setAttribute("opacity", "0");
-        }
-    }
-
     private setColorFontXAxis(xAxisTextNodes: Selection<BaseType, any, any, any>) {
         const options = this.data.formattingSettings.categoryAxis.options;
 
@@ -1052,18 +1027,37 @@ export class StreamGraph implements IVisual {
         };
 
         this.xAxisProperties = AxisHelper.createAxis(axisOptions);
-        this.axisX.call(this.xAxisProperties.axis);
-
-        this.hideFirstAndLastTickXAxis();
-        
-        const xAxisTextNodes: Selection<BaseType, any, any, any> = this.axisX.selectAll("text");
-        
-        this.setColorFontXAxis(xAxisTextNodes);
 
         // Handle label rotation based on orientation mode
         const orientationMode = this.data.formattingSettings.categoryAxis.options.labelOrientationMode.value.value;
+
+        // When ForceRotate is on, force ALL tick values to show regardless of available space.
+        // This prevents labels from disappearing one-by-one during resize.
+        if (orientationMode === LabelOrientationMode[LabelOrientationMode.ForceRotate]) {
+            if (isScalarVal) {
+                // For scalar (datetime/numeric) axes, use all actual category values as tick values
+                const allTickValues = this.data.categoriesText.map((val) =>
+                    val instanceof Date ? (val as Date).getTime() : val as number
+                );
+                this.xAxisProperties.axis.tickValues(allTickValues);
+            } else {
+                this.xAxisProperties.axis.tickValues(dataDomainVals);
+            }
+        }
+
+        this.axisX.call(this.xAxisProperties.axis);
+        const xAxisTextNodes: Selection<BaseType, any, any, any> = this.axisX.selectAll("text");
+        
+        this.setColorFontXAxis(xAxisTextNodes);
         
         if (orientationMode === LabelOrientationMode[LabelOrientationMode.ForceRotate]) {
+            // Hide first and last inner ticks only when rotating to prevent visual duplication
+            const xAxisTickLines = this.axisX.selectAll<Element, unknown>(".tick line").nodes();
+            if (xAxisTickLines.length > 2) {
+                xAxisTickLines[0].setAttribute("opacity", "0");
+                xAxisTickLines[xAxisTickLines.length - 1].setAttribute("opacity", "0");
+            }
+
             xAxisTextNodes
                 .classed(StreamGraph.LabelMiddleSelector.className, true)
                 .style("text-anchor", StreamGraph.AxisTextNodeTextAnchorForAngel0)
@@ -1136,8 +1130,7 @@ export class StreamGraph implements IVisual {
         this.margin.left = baseMarginLeft;
         
         // Add extra left margin for rotated X-axis labels
-        const extraRotatedMargin = this.getRotatedXAxisLabelMargin();
-        this.margin.left += extraRotatedMargin;
+        this.margin.left += this.cachedRotatedLabelMargin;
 
         if (valueAxisSettings.title.show.value) {
             this.margin.left += StreamGraph.YAxisLabelSize;
@@ -1221,11 +1214,10 @@ export class StreamGraph implements IVisual {
 
         const categoryAxisSettings: BaseAxisCardSettings = this.data.formattingSettings.categoryAxis;
         const isXAxisOn: boolean = categoryAxisSettings.options.show.value;
-        const additionalMarginForRotation = this.getRotatedXAxisLabelMargin();
         
         // Calculate the base bottom margin (axis + labels + rotation space)
         const baseBottomMargin = isXAxisOn
-            ? StreamGraph.XAxisOnSize + parseInt(this.data.formattingSettings.categoryAxis.options.fontSize.value.toString()) + additionalMarginForRotation
+            ? StreamGraph.XAxisOnSize + parseInt(this.data.formattingSettings.categoryAxis.options.fontSize.value.toString()) + this.cachedRotatedLabelMargin
             : StreamGraph.XAxisOffSize;
         
         this.margin.bottom = baseBottomMargin;
@@ -1275,21 +1267,22 @@ export class StreamGraph implements IVisual {
         hasHighlights: boolean = false
     ): Selection<BaseType, StackedStackValue, any, any> {
         const { width, height } = this.viewport;
+        this.cachedRotatedLabelMargin = this.getRotatedXAxisLabelMargin();
+
         // Calculate left margin for Y-axis and Y-axis title
         this.margin.left = this.data.formattingSettings.valueAxis.options.show.value
             ? StreamGraph.YAxisOnSize + Math.min(this.data.yAxisValueMaxTextSize, StreamGraph.YAxisMaxTextWidth)
             : StreamGraph.YAxisOffSize;
 
         // Add extra left margin for rotated X-axis labels
-        this.margin.left += this.getRotatedXAxisLabelMargin();
+        this.margin.left += this.cachedRotatedLabelMargin;
 
         if (this.data.formattingSettings.valueAxis.title.show.value) {
             this.margin.left += StreamGraph.YAxisLabelSize;
         }
 
-        const additionalMarginForRotation = this.getRotatedXAxisLabelMargin();
         this.margin.bottom = this.data.formattingSettings.categoryAxis.options.show.value
-            ? StreamGraph.XAxisOnSize + this.data.xAxisFontSize + additionalMarginForRotation
+            ? StreamGraph.XAxisOnSize + this.data.xAxisFontSize + this.cachedRotatedLabelMargin
             : StreamGraph.XAxisOffSize;
 
         if (this.data.formattingSettings.categoryAxis.title.show.value) {
@@ -1775,28 +1768,12 @@ export class StreamGraph implements IVisual {
         const halfWidth = width / 2;
         const halfHeight = height / 2;
 
-        // Calculate bounding boxes
-        const box1 = {
-            left: label1.x - halfWidth,
-            right: label1.x + halfWidth,
-            top: label1.y - halfHeight,
-            bottom: label1.y + halfHeight
-        };
-
-        const box2 = {
-            left: label2.x - halfWidth,
-            right: label2.x + halfWidth,
-            top: label2.y - halfHeight,
-            bottom: label2.y + halfHeight
-        };
-
-        // Check if boxes overlap
-        const overlaps = !(box1.right <= box2.left || 
-                          box1.left >= box2.right || 
-                          box1.bottom <= box2.top || 
-                          box1.top >= box2.bottom);
-        
-        return overlaps;
+        return !(
+            label1.x + halfWidth <= label2.x - halfWidth ||
+            label1.x - halfWidth >= label2.x + halfWidth ||
+            label1.y + halfHeight <= label2.y - halfHeight ||
+            label1.y - halfHeight >= label2.y + halfHeight
+        );
     }
 
     private renderLegend(streamGraphData: StreamData): void {
